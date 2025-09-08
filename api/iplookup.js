@@ -1,8 +1,8 @@
 import dns from "dns/promises";
 import net from "net";
-import geoip from "geoip-lite"; // untuk geolokasi offline
+import geoip from "geoip-lite";
 
-// Fungsi untuk port scanning sederhana
+// Fungsi scan port sederhana
 async function scanPorts(ip) {
   const portsToScan = [21, 22, 25, 53, 80, 110, 143, 443, 3306, 8080];
   const results = [];
@@ -28,28 +28,38 @@ async function scanPorts(ip) {
 }
 
 export default async function handler(req, res) {
+  res.setHeader("Content-Type", "application/json");
+
   const { ip, domain } = req.query;
+  let targetIP = ip;
 
   try {
-    let targetIP = ip;
-
-    // Jika input domain
+    // Jika input domain → resolve IP
     if (domain) {
       const addresses = await dns.lookup(domain);
       targetIP = addresses.address;
     }
 
+    // Jika tidak ada ip/domain → ambil dari pengunjung
     if (!targetIP) {
-      return res.status(400).json({ error: "Masukkan ?ip= atau ?domain=" });
+      targetIP =
+        req.headers["x-forwarded-for"]?.split(",")[0] ||
+        req.socket.remoteAddress;
     }
 
-    // Geolokasi berdasarkan database offline
+    if (!targetIP) {
+      return res
+        .status(400)
+        .json({ author: "seraphyne Redy", error: "Tidak ada IP ditemukan" });
+    }
+
+    // Geolokasi
     const geo = geoip.lookup(targetIP) || {};
 
     // Port scan
     const ports = await scanPorts(targetIP);
 
-    // DNS resolve jika domain
+    // DNS records jika domain
     let dnsRecords = {};
     if (domain) {
       dnsRecords = {
@@ -62,6 +72,7 @@ export default async function handler(req, res) {
     }
 
     return res.status(200).json({
+      author: "seraphyne Redy",
       target: domain || targetIP,
       ip: targetIP,
       geo,
@@ -72,6 +83,6 @@ export default async function handler(req, res) {
         : null,
     });
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    return res.status(500).json({ author: "seraphyne Redy", error: err.message });
   }
-    }
+}
